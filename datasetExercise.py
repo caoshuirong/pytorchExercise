@@ -12,7 +12,7 @@ batch = next(iter(tran_loader))
 
 images,labels = batch
 
-grid = torchvision.utils.make_grid(images,nrow=10)
+grid = torchvision.utils.make_grid(images,nrow=10,padding=0)
 
 plt.figure(figsize=(15,15))
 
