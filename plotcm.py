@@ -1,7 +1,9 @@
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
-
+import matplotlib as mpl
+mpl.rcParams['font.sans-serif'] = ['KaiTi']
+mpl.rcParams['axes.unicode_minus']=False
 
 
 def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
@@ -27,6 +29,8 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
     plt.tight_layout()
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
+    # 让窗口停留的方法 plt.show()  plt.pause(0)
+    plt.show()
 
 # example
 if __name__ == "__main__":

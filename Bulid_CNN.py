@@ -62,7 +62,7 @@ network = Network()
 # 指定优化器
 optimizer = optim.Adam(network.parameters(),lr=0.01)
 # 循环训练
-for i in range(5):
+for i in range(1):
     total_correct = 0  # 每一轮的总正确个数
     total_accuracy = 0  # 每一轮的总正确率
     total_num = len(train_set)
@@ -89,7 +89,25 @@ for i in range(5):
 
 
 # 四、评价模型
+from sklearn.metrics import confusion_matrix
+from plotcm import plot_confusion_matrix
+from matplotlib import pyplot as plt
 
+def get_all_preds(model,data_loader):
+    all_preds = torch.tensor([])
+    with torch.no_grad():
+        for batch in data_loader:
+            images,labels = batch
+            preds = model(images)
+            all_preds = torch.cat((all_preds,preds),dim=0)
+    return all_preds
+train_preds = get_all_preds(network,data_loader)
+# 生成混淆矩阵
+cm = confusion_matrix(train_set.targets,train_preds.argmax(dim = 1))
+# 绘制混淆矩阵
+name = ('T-shirt','Trouser','Pullover','Dress','Coat','Sandal','Shirt','Sneaker','Bag','Ankle boot')
+plt.figure(figsize=(10, 10))
+plot_confusion_matrix(cm, name)
 
 
 
