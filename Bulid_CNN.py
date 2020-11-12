@@ -8,6 +8,11 @@ import torchvision.transforms as Transforms
 from torch.utils.data import DataLoader
 # 优化器
 import torch.optim as optim
+# 独热码
+from sklearn.preprocessing import OneHotEncoder
+
+print(torch.__version__)
+
 # 一、搭建网络
 class Network(nn.Module):
     # 指定每一层连接权重的形状
@@ -42,7 +47,7 @@ class Network(nn.Module):
 
     # output layer
         t = self.out(t)
-        # t = F.softmax(t)
+        t = F.softmax(t,dim = 1)
         return t
 
 # 计算每一批样本判断正确的个数
@@ -62,7 +67,7 @@ network = Network()
 # 指定优化器
 optimizer = optim.Adam(network.parameters(),lr=0.01)
 # 循环训练
-for i in range(1):
+for i in range(10):
     total_correct = 0  # 每一轮的总正确个数
     total_accuracy = 0  # 每一轮的总正确率
     total_num = len(train_set)
@@ -70,14 +75,29 @@ for i in range(1):
     for batch in data_loader:
         # 解包
         images,labels = batch
+        # 对标签进行独热编码
+        enc = OneHotEncoder(sparse=False)
+        # 一个train_data含有多个特征，使用OneHotEncoder时，特征和标签都要按列存放, sklearn都要用二维矩阵的方式存放
+        one_hot_labels = enc.fit_transform(
+            labels.reshape(-1, 1))  # 如果不加 toarray() 的话，输出的是稀疏的存储格式，即索引加值的形式，也可以通过参数指定 sparse = False 来达到同样的效果
+
         # 预测
         preds = network(images)
+
         # 计算误差
-        loss = F.cross_entropy(preds,labels) # 直接输入preds 因为crossEntropy内部封装了softMax，它需要把每一行的预测结果装换成对应的概率
+        loss = F.mse_loss(preds.type(torch.FloatTensor),torch.tensor(one_hot_labels,dtype = torch.float32),reduction="mean")
+
+        # ****为什么梯度为None,因为我的标签是0~9的类别编号，并没有转换成独热码。分类问题拟合的是一个概率分布，就是在每一个位置的分布律。
+        # 回归问题才是用具体的数值
+
+        # loss = F.cross_entropy(preds,labels) # 直接输入preds 因为crossEntropy内部封装了softMax，它需要把每一行的预测结果装换成对应的概率
         # 不同批次的遗留梯度清零
         optimizer.zero_grad()
         # 反向传播，计算导数
         loss.backward()
+
+        # print(torch.max(network.conv1.weight.grad))
+
         # 更新权重
         optimizer.step()
         #
@@ -105,7 +125,7 @@ train_preds = get_all_preds(network,data_loader)
 # 生成混淆矩阵
 cm = confusion_matrix(train_set.targets,train_preds.argmax(dim = 1))
 # 绘制混淆矩阵
-name = ('T-shirt','Trouser','Pullover','Dress','Coat','Sandal','Shirt','Sneaker','Bag','Ankle boot')
+name = ('T-shirt','Trouser','Pullover','Dress','Coat','Sandal','Shirt','Sneaker','Bag','Akle boot')
 plt.figure(figsize=(10, 10))
 plot_confusion_matrix(cm, name)
 
