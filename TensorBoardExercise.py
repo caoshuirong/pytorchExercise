@@ -15,12 +15,10 @@ from torch.utils.tensorboard import SummaryWriter
 # product
 from itertools import product
 from collections import OrderedDict,namedtuple
-# image show
-import numpy as np
-from matplotlib import pyplot as plt
 # display the network.named_parameters()
 NEED_HISTOGRAM = True
-
+from RunManager import RunManager
+import time
 # try the possible hyper-parameters
 class RunBuilder():
     @staticmethod        # It can use the class name to call get_runs function
@@ -32,12 +30,6 @@ class RunBuilder():
             runs.append(Run(*v))                # use the values of production to initial the subclass of tuple.
         return runs
 
-# determine the value of hyper-parameters
-params = OrderedDict(
-    lr = [0.01, 0.001],
-    batch_size = [10, 100, 1000],
-
-)
 
 
 #print(torch.__version__)
@@ -80,33 +72,23 @@ class Network(nn.Module):
         return t
 
 # 每一批样本判断正确的个数
-def get_num_correct(preds,labels):
-    return torch.argmax(preds,dim=1).eq(labels).sum().item()
+# def get_num_correct(preds,labels):
+#     return torch.argmax(preds,dim=1).eq(labels).sum().item()
 
 # 二、导入数据集
 train_set = torchvision.datasets.FashionMNIST(root='./data/FashionMNIST',
                                               train=True,
-                                            download=True,
+                                              download=True,
                                               transform=Transforms.Compose([Transforms.ToTensor()]))
 
-network = Network()
-optimizer = optim.Adam(network.parameters(), lr= 0.01)
-data_loader = DataLoader(train_set,batch_size=100)
-images,labels = next(iter(data_loader))
-grid = torchvision.utils.make_grid(images, nrow=10)
-image_grid = np.transpose(grid,[1,2,0]) # [B C H W] -> [H W C]
-# display image
-plt.imshow(image_grid)
-# keep the window
-plt.show()
-# tensorboard
-tb = SummaryWriter()
-# write images
-tb.add_image('images',grid)
-# write the nn structure
-tb.add_graph(network,images)
-# close the file
-tb.close()
+# determine the value of hyper-parameters
+params = OrderedDict(
+    lr = [.01]
+    ,batch_size = [100, 1000]
+    ,shuffle = [True, False]
+)
+# RunManager instance
+m = RunManager()
 
 # 三、训练网络
 for run in RunBuilder.get_runs(params):
@@ -115,64 +97,50 @@ for run in RunBuilder.get_runs(params):
     # 指定优化器,learning rate
     optimizer = optim.Adam(network.parameters(), lr=run.lr)
     # batch_size
-    data_loader = DataLoader(train_set, run.batch_size)
-    # define the comment of tensorboard
-    comment = f'-{run}'
-    # create instance of tensorboard
-    tb = SummaryWriter(comment=comment)
-
+    data_loader = DataLoader(train_set, run.batch_size,shuffle=run.shuffle)
+    # record hyper-parameters
+    m.begin_run(run,network,data_loader)
     # 循环训练
     for epoch in range(5):
-        total_correct = 0   # 每一轮的总正确个数
-        total_accuracy = 0  # 每一轮的总正确率
-        total_loss = 0.0
-        total_num = len(train_set)
-        # 内循环
+        # record accuracy,loss……
+        m.begin_epoch()
         for batch in data_loader:
             # 解包
             images,labels = batch
-            # 对标签进行独热编码
-            enc = OneHotEncoder(sparse=False)
-            # 一个train_data含有多个特征，使用OneHotEncoder时，特征和标签都要按列存放, sklearn都要用二维矩阵的方式存放
-            one_hot_labels = enc.fit_transform(
-                labels.reshape(-1, 1))  # 如果不加 toarray() 的话，输出的是稀疏的存储格式，即索引加值的形式，也可以通过参数指定 sparse = False 来达到同样的效果
+            # # 对标签进行独热编码
+            # enc = OneHotEncoder(sparse=False)
+            # # 一个train_data含有多个特征，使用OneHotEncoder时，特征和标签都要按列存放, sklearn都要用二维矩阵的方式存放
+            # one_hot_labels = enc.fit_transform(
+            #     labels.reshape(-1, 1))  # 如果不加 toarray() 的话，输出的是稀疏的存储格式，即索引加值的形式，也可以通过参数指定 sparse = False 来达到同样的效果
 
             # 预测
             preds = network(images)
 
             # 计算误差
             # loss = F.mse_loss(preds.type(torch.FloatTensor),torch.tensor(one_hot_labels,dtype = torch.float32),reduction="mean")
-
             # ****为什么梯度为None,因为我的标签是0~9的类别编号，并没有转换成独热码。分类问题拟合的是一个概率分布，就是在每一个位置的分布律。
             # 回归问题才是用具体的数值
 
             loss = F.cross_entropy(preds,labels) # 直接输入preds 因为crossEntropy内部封装了softMax，它需要把每一行的预测结果装换成对应的概率
             # 不同批次的遗留梯度清零
             optimizer.zero_grad()
-            # 反向传播，计算导数
+            # calculate gradients
             loss.backward()
             # print(torch.max(network.conv1.weight.grad))
-
-            # 更新权重
+            # Update weights
             optimizer.step()
-            # accumulate the num of correct prediction
-            total_correct += get_num_correct(preds,labels)
             # calculate each batch's total loss
-            total_loss += loss.item()*images.shape[0]
-        # calculate the accuracy of each epoch
-        total_accuracy = total_correct / total_num
-        # write to file
-        tb.add_scalar('loss', total_loss, epoch)
-        tb.add_scalar('num_of_correct',total_correct,epoch)
-        tb.add_scalar('accuracy',total_accuracy,epoch)
-        if NEED_HISTOGRAM:
-            for name,weight in network.named_parameters():
-                tb.add_histogram(name,weight,epoch)
-                tb.add_histogram(f'{name}.grad',weight.grad,epoch)
-            # show information
-        string = 'epoch:%d loss = %f  accuracy = %f' % (epoch,loss.item(),total_accuracy)
-        print(string)
-    tb.close()
+            m.track_loss(loss,batch)
+            # accumulate the num of correct prediction
+            m.track_num_correct(preds,labels)
+        # calculate accuracy and write run_data to file
+        m.end_epoch()
+        # # show information
+        # string = 'epoch:%d loss = %f  accuracy = %f' % (epoch,loss.item())
+        # print(string)
+    m.end_run()
+# input file name to save hyper-parameters results
+m.save(str(time.time())+'results')
 
 # 四、评价模型
 from sklearn.metrics import confusion_matrix
@@ -194,3 +162,37 @@ cm = confusion_matrix(train_set.targets,train_preds.argmax(dim = 1))
 name = ('T-shirt','Trouser','Pullover','Dress','Coat','Sandal','Shirt','Sneaker','Bag','Akle boot')
 plt.figure(figsize=(10, 10))
 plot_confusion_matrix(cm, name)
+
+
+
+
+
+
+
+
+
+
+
+# some examples
+# # use add_image and add_graph
+# # image show
+# import numpy as np
+# from matplotlib import pyplot as plt
+# network = Network()
+# optimizer = optim.Adam(network.parameters(), lr= 0.01)
+# data_loader = DataLoader(train_set,batch_size=100)
+# images,labels = next(iter(data_loader))
+# grid = torchvision.utils.make_grid(images, nrow=10)
+# image_grid = np.transpose(grid,[1,2,0]) # [B C H W] -> [H W C]
+# # display image
+# plt.imshow(image_grid)
+# # keep the window
+# plt.show()
+# # tensorboard
+# tb = SummaryWriter()
+# # write images
+# tb.add_image('images',grid)
+# # write the nn structure
+# tb.add_graph(network,images)
+# # close the file
+# tb.close()

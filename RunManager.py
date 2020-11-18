@@ -1,19 +1,12 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 import torchvision
-import torchvision.transforms as transforms
-
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from IPython.display import display, clear_output
-import pandas as pd
+# save run_data(run_data -> hyper_parameters results)
 import time
 import json
-
-from itertools import product
-from collections import namedtuple
+import pandas as pd
+# display run_data
+from IPython.display import display, clear_output
 from collections import OrderedDict
 
 class RunManager():
@@ -33,22 +26,26 @@ class RunManager():
         self.tb = None
 
     def begin_run(self, run, network, loader):
+        # record all epochs of each hyper-parameters
         self.run_start_time = time.time()
-
+        # run->different hyper-parameters
         self.run_params = run
         self.run_count += 1
 
         self.network = network
         self.loader = loader
+        # tensorboard
         self.tb = SummaryWriter(comment=f'-{run}')
 
         images, labels = next(iter(self.loader))
         grid = torchvision.utils.make_grid(images)
-
+        # write images
         self.tb.add_image('images', grid)
+        # write the nn structure
         self.tb.add_graph(self.network, images)
 
     def end_run(self):
+        # close tensorboard file
         self.tb.close()
         self.epoch_count = 0
 
@@ -57,6 +54,7 @@ class RunManager():
 
         self.epoch_count += 1
         self.epoch_loss = 0
+        # total_correct of prediction in each epoch
         self.epoch_num_correct = 0
 
     def end_epoch(self):
@@ -68,7 +66,7 @@ class RunManager():
 
         self.tb.add_scalar('Loss', loss, self.epoch_count)
         self.tb.add_scalar('Accuracy', accuracy, self.epoch_count)
-
+        # record weight and weight.grad of each layer
         for name, param in self.network.named_parameters():
             self.tb.add_histogram(name, param, self.epoch_count)
             self.tb.add_histogram(f'{name}.grad', param.grad, self.epoch_count)
@@ -82,7 +80,7 @@ class RunManager():
         results['run duration'] = run_duration
         for k, v in self.run_params._asdict().items(): results[k] = v
         self.run_data.append(results)
-
+        # use pandas to organize the results
         df = pd.DataFrame.from_dict(self.run_data, orient='columns')
         clear_output(wait=True)
         display(df)
@@ -91,9 +89,10 @@ class RunManager():
         self.epoch_loss += loss.item() * batch[0].shape[0]
 
     def track_num_correct(self, preds, labels):
-        self.epoch_num_correct += self.get_num_correct(preds, labels)
+        self.epoch_num_correct += self._get_num_correct_(preds, labels)
 
-    def _get_num_correct(self, preds, labels):
+    @torch.no_grad()
+    def _get_num_correct_(self, preds, labels):
         return preds.argmax(dim=1).eq(labels).sum().item()
 
     def save(self, fileName):
