@@ -42,7 +42,10 @@ class RunManager():
         # write images
         self.tb.add_image('images', grid)
         # write the nn structure
-        self.tb.add_graph(self.network, images)
+        self.tb.add_graph(
+                            self.network,
+                            images.to(getattr(run,'device','cpu'))
+                          )
 
     def end_run(self):
         # close tensorboard file
@@ -84,6 +87,7 @@ class RunManager():
         df = pd.DataFrame.from_dict(self.run_data, orient='columns')
         clear_output(wait=True)
         display(df)
+
 
     def track_loss(self, loss, batch):
         self.epoch_loss += loss.item() * batch[0].shape[0]

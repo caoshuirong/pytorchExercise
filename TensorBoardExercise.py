@@ -80,20 +80,27 @@ train_set = torchvision.datasets.FashionMNIST(root='./data/FashionMNIST',
                                               train=True,
                                               download=True,
                                               transform=Transforms.Compose([Transforms.ToTensor()]))
-
+# 指定训练设备
+if torch.cuda.is_available():
+    mydevice = ['cuda']
+else:
+    mydevice = ['cpu']
 # determine the value of hyper-parameters
 params = OrderedDict(
     lr = [.01]
     ,batch_size = [100, 1000]
     ,shuffle = [True, False]
+    ,device = mydevice
 )
 # RunManager instance
 m = RunManager()
 
 # 三、训练网络
 for run in RunBuilder.get_runs(params):
+
+    device = torch.device(run.device)
     # 生成模型实例
-    network = Network()
+    network = Network().to(device)
     # 指定优化器,learning rate
     optimizer = optim.Adam(network.parameters(), lr=run.lr)
     # batch_size
@@ -106,7 +113,8 @@ for run in RunBuilder.get_runs(params):
         m.begin_epoch()
         for batch in data_loader:
             # 解包
-            images,labels = batch
+            images = batch[0].to(device)
+            labels = batch[1].to(device)
             # # 对标签进行独热编码
             # enc = OneHotEncoder(sparse=False)
             # # 一个train_data含有多个特征，使用OneHotEncoder时，特征和标签都要按列存放, sklearn都要用二维矩阵的方式存放
