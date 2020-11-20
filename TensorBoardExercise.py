@@ -72,6 +72,8 @@ class Network(nn.Module):
         return t
 
 # 要启动多线程读取数据，必须先确定主线程，即if __name__ == '__main__':
+
+
 if __name__ == '__main__':
     # 二、导入数据集
     # 2.1 don't normalize
